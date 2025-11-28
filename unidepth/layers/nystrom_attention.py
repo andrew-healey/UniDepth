@@ -6,7 +6,8 @@ import torch.nn.functional as F
 from einops import rearrange
 
 try:
-    from xformers.components.attention import NystromAttention
+    from .nystrom_xformers import NystromAttention
+    # from xformers.components.attention import NystromAttention
 except ImportError:
     print("Cannot import NystromAttention, you can not run original UniDepth. UniDepthV2 is available.")
     class NystromAttention():
