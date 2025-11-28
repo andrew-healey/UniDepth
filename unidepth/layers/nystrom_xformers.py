@@ -96,7 +96,7 @@ class AvgPool(nn.Module):
         return torch.cat((x_avg_round, x_avg_off), dim=-2)
 
 
-@register_attention("nystrom", NystromSelfAttentionConfig)
+# @register_attention("nystrom", NystromSelfAttentionConfig)
 class NystromAttention(Attention):
     # TODO: update defaults for use_razavi_pinverse and inv_iterations
     def __init__(
