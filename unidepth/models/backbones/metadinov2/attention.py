@@ -13,21 +13,20 @@ import logging
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import os
 
 logger = logging.getLogger("dinov2")
 
 
-# xformers doesn't support 5090 as of writing (Nov 2025), so we just disable it
-XFORMERS_AVAILABLE = False
-# try:
-#     from xformers.ops import fmha, memory_efficient_attention, unbind
+try:
+    from xformers.ops import fmha, memory_efficient_attention, unbind
 
-#     XFORMERS_AVAILABLE = False
-# except ImportError:
-#     logger.warning("xFormers not available")
-#     XFORMERS_AVAILABLE = False
+    XFORMERS_AVAILABLE = True
+except ImportError:
+    logger.warning("xFormers not available")
+    XFORMERS_AVAILABLE = False
 
-# XFORMERS_AVAILABLE = XFORMERS_AVAILABLE and torch.cuda.is_available()
+XFORMERS_AVAILABLE = XFORMERS_AVAILABLE and torch.cuda.is_available() and os.environ.get("XFORMERS_DISABLED") is None
 
 
 class Attention(nn.Module):
