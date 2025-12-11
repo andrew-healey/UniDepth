@@ -4,11 +4,77 @@ from typing import Callable, Optional, Sequence, Tuple, Union
 
 import torch
 import torch.nn as nn
-from timm.layers import (AvgPool2dSame, DropPath, GlobalResponseNormMlp,
-                         LayerNorm, LayerNorm2d, Mlp, create_conv2d,
-                         get_act_layer, make_divisible, to_ntuple,
-                         trunc_normal_)
+from timm.models.layers import (AvgPool2dSame, DropPath,
+                                LayerNorm2d, Mlp, create_conv2d,
+                                get_act_layer, make_divisible, to_ntuple,
+                                trunc_normal_)
+
+# LayerNorm is just nn.LayerNorm in old timm
+LayerNorm = nn.LayerNorm
 from torch.utils.checkpoint import checkpoint
+
+
+class GlobalResponseNorm(nn.Module):
+    """Global Response Normalization layer (from ConvNeXt-V2)
+    Inlined here for compatibility with timm 0.6.x
+    """
+    def __init__(self, dim, eps=1e-6, channels_last=True):
+        super().__init__()
+        self.eps = eps
+        if channels_last:
+            self.spatial_dim = (1, 2)
+            self.channel_dim = -1
+            self.wb_shape = (1, 1, 1, -1)
+        else:
+            self.spatial_dim = (2, 3)
+            self.channel_dim = 1
+            self.wb_shape = (1, -1, 1, 1)
+
+        self.weight = nn.Parameter(torch.zeros(dim))
+        self.bias = nn.Parameter(torch.zeros(dim))
+
+    def forward(self, x):
+        x_g = x.norm(p=2, dim=self.spatial_dim, keepdim=True)
+        x_n = x_g / (x_g.mean(dim=self.channel_dim, keepdim=True) + self.eps)
+        return x + torch.addcmul(self.bias.view(self.wb_shape), self.weight.view(self.wb_shape), x * x_n)
+
+
+class GlobalResponseNormMlp(nn.Module):
+    """MLP w/ Global Response Norm (see grn.py), nn.Linear or 1x1 Conv2d
+    Inlined here for compatibility with timm 0.6.x
+    """
+    def __init__(
+        self,
+        in_features,
+        hidden_features=None,
+        out_features=None,
+        act_layer=nn.GELU,
+        bias=True,
+        drop=0.0,
+        use_conv=False,
+    ):
+        super().__init__()
+        out_features = out_features or in_features
+        hidden_features = hidden_features or in_features
+        bias = to_ntuple(2)(bias)
+        drop_probs = to_ntuple(2)(drop)
+        linear_layer = partial(nn.Conv2d, kernel_size=1) if use_conv else nn.Linear
+
+        self.fc1 = linear_layer(in_features, hidden_features, bias=bias[0])
+        self.act = act_layer()
+        self.drop1 = nn.Dropout(drop_probs[0])
+        self.grn = GlobalResponseNorm(hidden_features, channels_last=not use_conv)
+        self.fc2 = linear_layer(hidden_features, out_features, bias=bias[1])
+        self.drop2 = nn.Dropout(drop_probs[1])
+
+    def forward(self, x):
+        x = self.fc1(x)
+        x = self.act(x)
+        x = self.drop1(x)
+        x = self.grn(x)
+        x = self.fc2(x)
+        x = self.drop2(x)
+        return x
 
 
 def get_num_layer_for_convnext(var_name):
